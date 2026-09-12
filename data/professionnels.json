@@ -1688,11 +1688,11 @@
   },
   {
     "id": "p_1789246312146ilw1j",
-    "nom": "henry",
+    "nom": "HENRY",
     "specialite": "kiné/ergo",
-    "territoire": "la tronche",
+    "territoire": "grenoble",
     "telephone": "0623845675",
-    "adresse": "45 grande rue",
+    "adresse": "45 grande rue LA TRONCHE 38700",
     "notes": "venir avec son ancienne orthèse à chaque séance",
     "liens": [
       {
@@ -1700,8 +1700,7 @@
         "url": "https://chirurgie-reparatrice-main-brules.fr/kine-ergo.html"
       }
     ],
-    "lat": 50.692493,
-    "lon": 3.178074,
-    "geoApprox": true
+    "lat": 45.207037,
+    "lon": 5.744768
   }
 ]
