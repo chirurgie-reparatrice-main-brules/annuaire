@@ -522,6 +522,37 @@
     #print-block .print-url{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft);}
   }
 
+
+  /* Sélection + impression A4 */
+  .card-tools{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:12px; padding-top:10px; border-top:1px dashed var(--line);}
+  .sel-label{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--ink-soft); cursor:pointer; user-select:none;}
+  .sel-label input{width:17px; height:17px; accent-color:var(--clay); cursor:pointer;}
+  .card.selected{outline:2px solid var(--logo-blue); outline-offset:-1px;}
+  .btn-print-card{display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--line); color:var(--teal-deep); border-radius:8px; padding:6px 10px; font:inherit; font-size:12.5px; cursor:pointer;}
+  .btn-print-card:hover{border-color:var(--clay); background:#F2F8FC;}
+  .btn-print-card svg{width:14px; height:14px;}
+  #sel-bar{position:fixed; left:0; right:0; bottom:0; z-index:90; display:none; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; padding:12px 16px; background:var(--teal-deep); color:#fff; box-shadow:0 -4px 16px rgba(0,0,0,.18);}
+  #sel-bar.show{display:flex;}
+  #sel-bar button{font:inherit; font-size:14px; border-radius:8px; padding:8px 14px; cursor:pointer; border:1px solid rgba(255,255,255,.5); background:transparent; color:#fff;}
+  #sel-bar button.primary{background:var(--logo-blue); border-color:var(--logo-blue); color:#0D3C5C; font-weight:600;}
+  #print-sheet{display:none;}
+  #print-sheet.measuring{display:block; position:absolute; left:-10000px; top:0; width:190mm; visibility:hidden;}
+  #print-sheet{box-sizing:border-box; width:190mm; color:#111; font-family:inherit; line-height:1.3;}
+  #print-sheet .ps-title{font-weight:700; font-size:1.15em; padding-bottom:3mm; margin-bottom:3mm; border-bottom:1.5px solid #333;}
+  #print-sheet .ps-grid{display:grid; gap:3mm; align-items:start;}
+  #print-sheet .ps-card{border:1px solid #999; border-radius:2mm; padding:2.5mm 3mm; break-inside:avoid; overflow-wrap:anywhere;}
+  #print-sheet .ps-card h3{margin:0 0 1mm; font-size:1.1em;}
+  #print-sheet .ps-spec{font-style:italic; margin-bottom:1mm;}
+  #print-sheet .ps-sect{font-size:.85em; color:#444; margin-bottom:1mm;}
+  #print-sheet .ps-notes{margin-top:1mm; white-space:pre-line;}
+  @page{size:A4; margin:10mm;}
+  @media print{
+    body.print-selection > *:not(#print-sheet){display:none !important;}
+    body.print-selection #print-sheet{display:block !important; position:static; visibility:visible; max-height:277mm; overflow:hidden;}
+    body.print-selection{background:#fff; padding:0 !important; margin:0 !important; min-height:0 !important; height:auto !important;}
+    html:has(body.print-selection){height:auto !important;}
+  }
+
   @media (max-width:520px){
     .top-row{flex-direction:column;}
     .field-row{flex-direction:column; gap:0;}
@@ -610,6 +641,13 @@
 <main id="main-content">
   <!-- rendu dynamique -->
 </main>
+
+<div id="sel-bar" class="no-print">
+  <span id="sel-count">0 sélectionné</span>
+  <button class="primary" id="sel-print" type="button">Imprimer la sélection (1 page A4)</button>
+  <button id="sel-clear" type="button">Tout désélectionner</button>
+</div>
+<div id="print-sheet" aria-hidden="true"></div>
 
 <!-- ================= Overlays ================= -->
 
@@ -913,10 +951,88 @@
     if(territories.includes(current)) sel.value = current;
   }
 
+
+  // ---------- Sélection + impression sur une seule page A4 ----------
+  const selected = new Set();
+  const sheetEl = document.getElementById('print-sheet');
+  function updateSelBar(){
+    const n = selected.size;
+    $('sel-count').textContent = n + ' sélectionné' + (n>1?'s':'');
+    $('sel-bar').classList.toggle('show', n>0);
+    document.body.style.paddingBottom = n>0 ? '70px' : '';
+  }
+  function psCard(p){
+    const lines = [];
+    lines.push(`<h3>${escapeHtml(p.nom)}</h3>`);
+    if(p.specialite) lines.push(`<div class="ps-spec">${escapeHtml(p.specialite)}</div>`);
+    if(p.territoire) lines.push(`<div class="ps-sect">${escapeHtml(p.territoire)}</div>`);
+    if(p.telephone) lines.push(`<div>☎ ${escapeHtml(p.telephone)}</div>`);
+    if(p.adresse) lines.push(`<div>⌂ ${escapeHtml(p.adresse)}</div>`);
+    if(p.notes) lines.push(`<div class="ps-notes">${escapeHtml(p.notes)}</div>`);
+    (p.liens||[]).forEach(l=> lines.push(`<div>${escapeHtml(l.label||'Lien')} : ${escapeHtml(l.url)}</div>`));
+    return `<div class="ps-card">${lines.join('')}</div>`;
+  }
+  // Retourne true si la liste tient sur une page A4 (hauteur utile 277 mm, marge de sécurité 4 mm)
+  function fitSheet(list){
+    const mm = 96/25.4;
+    const maxH = 273*mm;
+    sheetEl.innerHTML = `<div class="ps-title">Correspondants — Chirurgie de la main et des brûlés, CHUGA</div><div class="ps-grid">${list.map(psCard).join('')}</div>`;
+    sheetEl.classList.add('measuring');
+    const grid = sheetEl.querySelector('.ps-grid');
+    const maxCols = list.length===1 ? 1 : 3;
+    let ok = false;
+    outer:
+    for(let fs=12; fs>=6.5; fs-=0.5){
+      sheetEl.style.fontSize = fs+'pt';
+      for(let cols=1; cols<=maxCols; cols++){
+        grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        if(sheetEl.scrollHeight <= maxH){ ok = true; break outer; }
+      }
+    }
+    sheetEl.classList.remove('measuring');
+    return ok;
+  }
+  function printList(list){
+    if(!list.length) return;
+    let use = list.slice();
+    if(!fitSheet(use)){
+      while(use.length>1){
+        use.pop();
+        if(fitSheet(use)) break;
+      }
+      toast(`Trop de fiches pour une seule page A4 : maximum ${use.length} avec ces contenus. Retirez-en pour imprimer.`);
+      fitSheet(use);
+      return;
+    }
+    document.body.classList.add('print-selection');
+    const done = ()=>{ document.body.classList.remove('print-selection'); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    window.print();
+  }
+  function selectedList(){
+    return professionnels.filter(p=>selected.has(p.id));
+  }
+  mainEl.addEventListener('change', e=>{
+    const cb = e.target.closest('[data-sel]');
+    if(!cb) return;
+    const id = cb.dataset.sel;
+    if(cb.checked) selected.add(id); else selected.delete(id);
+    const card = cb.closest('.card'); if(card) card.classList.toggle('selected', cb.checked);
+    updateSelBar();
+  });
+  mainEl.addEventListener('click', e=>{
+    const b = e.target.closest('[data-print-one]');
+    if(!b) return;
+    const p = professionnels.find(x=>x.id===b.dataset.printOne);
+    if(p) printList([p]);
+  });
+  $('sel-print').addEventListener('click', ()=>printList(selectedList()));
+  $('sel-clear').addEventListener('click', ()=>{ selected.clear(); updateSelBar(); render(); });
+
   function cardHtml(p){
     const links = (p.liens||[]).map(l=>`<a class="link-chip" href="${escapeHtml(l.url)}" target="_blank" rel="noopener">${linkIcon(l.url)} ${escapeHtml(l.label||'Lien')}</a>`).join('');
     return `
-    <div class="card" data-id="${p.id}">
+    <div class="card${selected.has(p.id)?' selected':''}" data-id="${p.id}">
       ${isAdmin ? `<div class="card-admin-actions no-print">
         <button class="mini-btn" data-action="edit" data-id="${p.id}" title="Modifier" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -932,6 +1048,10 @@
       ${p.adresse ? `<div class="card-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg><a href="${mapsUrl(p.adresse)}" target="_blank" rel="noopener">${escapeHtml(p.adresse)}</a></div>` : ''}
       ${p.notes ? `<div class="card-notes">${linkifyText(p.notes)}</div>` : ''}
       ${links ? `<div class="card-links">${links}</div>` : ''}
+      <div class="card-tools no-print">
+        <label class="sel-label"><input type="checkbox" data-sel="${p.id}" ${selected.has(p.id)?'checked':''}> Sélectionner</label>
+        <button class="btn-print-card" type="button" data-print-one="${p.id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Imprimer cette fiche</button>
+      </div>
     </div>`;
   }
 
